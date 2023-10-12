@@ -15,17 +15,23 @@
  */
 
 const POLL_INTERVAL = 15            // Poll every N seconds
-const SUBMIT_INTERVAL = 10         // Submit to API every N minutes Prod
+
 //const SUBMIT_INTERVAL = 3         // Submit to API every N minutes Dev
+let SUBMIT_INTERVAL = 10         // Submit to API every N minutes Prod
+
 const SEND_METADATA_INTERVAL = 1   // Submit to API every N hours
 const MIN_DISTANCE = 0.50          // Update database if moved X miles
+
 //const DB_UPDATE_MINUTES = 2       // Update database every N minutes (worst case) Dev
-const DB_UPDATE_MINUTES = 5       // Update database every N minutes (worst case) Prod
+let DB_UPDATE_MINUTES = 5       // Update database every N minutes (worst case) Prod
+
 const DB_UPDATE_MINUTES_MOVING = 1 // Update database every N minutes while moving
 const SPEED_THRESHOLD = 1          // Speed threshold for moving (knots)
 const MINIMUM_TURN_DEGREES = 25    // Update database if turned more than N degrees
-const BUFFER_LIMIT = 31           // Submit only X buffer entries at a time Prod
+
 //const BUFFER_LIMIT = 2           // Submit only X buffer entries at a time Dev
+let BUFFER_LIMIT = 31           // Submit only X buffer entries at a time Prod
+
 
 //const fs = require('fs');
 const filePath = require('path');
@@ -45,6 +51,8 @@ module.exports = function(app) {
   var statusProcess;
   var db;
   var API;
+
+  let mode;
   var host;
   var token;
   var gpsSource;
@@ -60,6 +68,7 @@ module.exports = function(app) {
   var angleSpeedApparent = 0;
   var previousSpeeds = [];
   var previousCOGs = [];
+
 
   var metadata = {
     name: app.getSelfPath('name'),
@@ -89,6 +98,17 @@ module.exports = function(app) {
     host = options.host;
     token = options.token;
     gpsSource = options.source;
+
+    mode = options.mode.toString();
+    mode = mode.toLowerCase();
+
+    if (mode == "dev")
+    {
+      SUBMIT_INTERVAL = 1
+      DB_UPDATE_MINUTES = 1
+      BUFFER_LIMIT = 2
+    }
+
 
     app.setPluginStatus('PostgSail started. Please wait for a status update.');
 
@@ -189,6 +209,10 @@ module.exports = function(app) {
       source: {
         type: "string",
         title: "GPS source (Optional - only if you have multiple GPS sources and you want to use an explicit source)"
+      },
+      mode: {
+        type: "string",
+        title: "Dev or Prod"
       }
     }
   }
