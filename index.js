@@ -488,7 +488,7 @@ module.exports = function(app) {
         app.debug('Save: ' + path);
         let source = data.updates[0]['$source'];
         if ((gpsSource) && (source != gpsSource)) {
-          app.debug(`Skipping position from GPS resource ${source}`);
+          //app.debug(`Skipping position from GPS resource ${source}`);
           break;
         }
         if (position) {
@@ -581,7 +581,7 @@ module.exports = function(app) {
         app.debug('Save: ' + path);
         let sogsource = data.updates[0]['$source'];
         if ((gpsSource) && (sogsource != gpsSource)) {
-          app.debug(`Skipping speedOverGround from resource ${sogsource}`);
+          //app.debug(`Skipping speedOverGround from resource ${sogsource}`);
           break;
         }
         // Keep the previous 3 values
@@ -590,18 +590,18 @@ module.exports = function(app) {
         previousSpeeds = previousSpeeds.slice(0, 3);
         break;
       case 'navigation.courseOverGroundTrue':
-        app.debug('Save: ' + path);
+        //app.debug('Save: ' + path);
         // Keep the previous 3 values
         courseOverGroundTrue = radiantToDegrees(value);
         previousCOGs.unshift(courseOverGroundTrue);
         previousCOGs = previousCOGs.slice(0, 6);
         break;
       case 'environment.wind.speedApparent':
-        app.debug('Save: ' + path);
+        //app.debug('Save: ' + path);
         windSpeedApparent = Math.max(windSpeedApparent, metersPerSecondToKnots(value));
         break;
       case 'environment.wind.angleApparent':
-        app.debug('Save: ' + path);
+        //app.debug('Save: ' + path);
         angleSpeedApparent = radiantToDegrees(value);
         break;
       /*
@@ -611,12 +611,12 @@ module.exports = function(app) {
       case 'navigation.state':
         // Wait for a valid status before sending data ?
         if (path) {
-          app.debug(`Save: ${path} with value ${value}`);
+          //app.debug(`Save: ${path} with value ${value}`);
           status = value;
         }
         break;
       case 'navigation.altitude':
-        app.debug(`Add to metrics path: '${path}'`);
+        //app.debug(`Add to metrics path: '${path}'`);
         metrics[path] = value;
         break;
       default:
@@ -631,7 +631,7 @@ module.exports = function(app) {
         } else if ( isNaN(value) || !isfloatField(value) || !isFinite(value) ) {
           //app.debug(`Skipping path '${path}' because value is invalid, '${value}'`);
         } else {
-          app.debug(`Add to metrics path: '${path}'`);
+          //app.debug(`Add to metrics path: '${path}'`);
           metrics[path] = value;
         }
     }
