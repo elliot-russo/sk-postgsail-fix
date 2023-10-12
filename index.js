@@ -247,8 +247,11 @@ module.exports = function(app) {
                   speedOverGround, courseOverGroundTrue, windSpeedApparent,
                   angleSpeedApparent, status, JSON.stringify(metrics)];
                   
-    const stmt = db.prepare('INSERT INTO buffer  VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    var info = stmt.run(values);
+    const stmt = db.prepare('INSERT INTO buffer (time,client_id, latitude, longitude,' +
+                                     'speedoverground, courseovergroundtrue, ' +
+                                     'windspeedapparent, anglespeedapparent, ' +
+                                     'status, metrics) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    let info = stmt.run(values);
 
     if (info.changes == 1)
       windSpeedApparent = 0;
@@ -376,21 +379,6 @@ module.exports = function(app) {
 
   }
 
-  function getKeyValue(key, maxAge) {
-    let data = app.getSelfPath(key);
-    if (!data) {
-      return null;
-    }
-    let now = new Date();
-    let ts = new Date(data.timestamp);
-    let age = (now - ts) / 1000;
-    if (age <= maxAge) {
-      return data.value
-    } else {
-      return null;
-    }
-  }
-
   function timeSince(date) {
     let seconds = Math.floor((new Date() - date) / 1000);
     let interval = seconds / 31536000;
@@ -428,27 +416,6 @@ module.exports = function(app) {
       return null;
     }
     return Math.round(ms * 1.94384 * 10) / 10;
-  }
-
-  function kelvinToCelsius(deg) {
-    if (deg == null) {
-      return null;
-    }
-    return Math.round((deg - 273.15) * 10) / 10;
-  }
-
-  function floatToPercentage(val) {
-    if (val == null) {
-      return null;
-    }
-    return val * 100;
-  }
-
-  function pascalToHectoPascal(pa) {
-    if (pa == null) {
-      return null;
-    }
-    return Math.round(pa/100*10)/10;
   }
 
   function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -658,12 +625,13 @@ module.exports = function(app) {
         // environment.sunlight.*
         // navigation.courseGreatCircle.*
         // design.*
+        
         if (path === '') {
-          app.debug(`Skipping path '${path}' because is invalid, '${value}'`);
+          //app.debug(`Skipping path '${path}' because is invalid, '${value}'`);
         } else if ( isNaN(value) || !isfloatField(value) || !isFinite(value) ) {
-          app.debug(`Skipping path '${path}' because value is invalid, '${value}'`);
+          //app.debug(`Skipping path '${path}' because value is invalid, '${value}'`);
         } else {
-          //app.debug(`Add to metrics path: '${path}'`);
+          app.debug(`Add to metrics path: '${path}'`);
           metrics[path] = value;
         }
     }
