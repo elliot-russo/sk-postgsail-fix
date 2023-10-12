@@ -103,7 +103,7 @@ module.exports = function(app) {
     });
     sendMetadata();
 
-    let dbFile = filePath.join(app.getDataDirPath(), 'postgsail.sqlite3');
+    let dbFile = filePath.join(app.getDataDirPath(), 'postgsail.sqlite3.db');
     
     //db = new sqlite3.Database(dbFile);
     db = new Database(dbFile);
@@ -247,7 +247,7 @@ module.exports = function(app) {
                   speedOverGround, courseOverGroundTrue, windSpeedApparent,
                   angleSpeedApparent, status, JSON.stringify(metrics)];
                   
-    const stmt = db.prepare('INSERT INTO buffer (time,client_id, latitude, longitude,' +
+    const stmt = db.prepare('INSERT INTO buffer (time, client_id, latitude, longitude,' +
                                      'speedoverground, courseovergroundtrue, ' +
                                      'windspeedapparent, anglespeedapparent, ' +
                                      'status, metrics) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -270,7 +270,7 @@ module.exports = function(app) {
     // Limit the numbers of entries for slow connection, 1 entry/row a minutes submit every 10min
     // and reduce memory usage
 
-    const stmt = db.prepare(`SELECT * FROM buffer ORDER BY time ${BUFFER_LIMIT}`);
+    const stmt = db.prepare(`SELECT * FROM buffer ORDER BY time LIMIT ${BUFFER_LIMIT}`);
     let data = stmt.all();
 
     //db.all(`SELECT * FROM buffer ORDER BY time LIMIT ${BUFFER_LIMIT}`, function(err, data) {
