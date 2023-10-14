@@ -605,7 +605,7 @@ module.exports = function(app) {
         }
         break;
       case 'navigation.speedOverGround':
-        app.debug('Save: ' + path);
+        //app.debug('Save: ' + path);
         let sogsource = data.updates[0]['$source'];
         if ((gpsSource) && (sogsource != gpsSource)) {
           //app.debug(`Skipping speedOverGround from resource ${sogsource}`);
