@@ -15,29 +15,22 @@
  */
 
 const POLL_INTERVAL = 15            // Poll every N seconds
-
+const SUBMIT_INTERVAL = 10         // Submit to API every N minutes Prod
 //const SUBMIT_INTERVAL = 3         // Submit to API every N minutes Dev
-let SUBMIT_INTERVAL = 10         // Submit to API every N minutes Prod
-
 const SEND_METADATA_INTERVAL = 1   // Submit to API every N hours
 const MIN_DISTANCE = 0.50          // Update database if moved X miles
-
 //const DB_UPDATE_MINUTES = 2       // Update database every N minutes (worst case) Dev
-let DB_UPDATE_MINUTES = 5       // Update database every N minutes (worst case) Prod
-
+const DB_UPDATE_MINUTES = 5       // Update database every N minutes (worst case) Prod
 const DB_UPDATE_MINUTES_MOVING = 1 // Update database every N minutes while moving
 const SPEED_THRESHOLD = 1          // Speed threshold for moving (knots)
 const MINIMUM_TURN_DEGREES = 25    // Update database if turned more than N degrees
-
+const BUFFER_LIMIT = 31           // Submit only X buffer entries at a time Prod
 //const BUFFER_LIMIT = 2           // Submit only X buffer entries at a time Dev
-let BUFFER_LIMIT = 31           // Submit only X buffer entries at a time Prod
-
 
 //const fs = require('fs');
 const filePath = require('path');
 const axios = require('axios');
-//const sqlite3 = require('sqlite3');
-const Database = require('better-sqlite3')
+const sqlite3 = require('sqlite3');
 const zlib = require('zlib');
 const moment = require('moment');
 const https = require('https');
@@ -51,8 +44,6 @@ module.exports = function(app) {
   var statusProcess;
   var db;
   var API;
-
-  let mode;
   var host;
   var token;
   var gpsSource;
@@ -68,7 +59,6 @@ module.exports = function(app) {
   var angleSpeedApparent = 0;
   var previousSpeeds = [];
   var previousCOGs = [];
-
 
   var metadata = {
     name: app.getSelfPath('name'),
@@ -99,17 +89,6 @@ module.exports = function(app) {
     token = options.token;
     gpsSource = options.source;
 
-    mode = options.mode.toString();
-    mode = mode.toLowerCase();
-
-    if (mode == "dev")
-    {
-      SUBMIT_INTERVAL = 1
-      DB_UPDATE_MINUTES = 1
-      BUFFER_LIMIT = 2
-    }
-
-
     app.setPluginStatus('PostgSail started. Please wait for a status update.');
 
     API = axios.create({
@@ -123,12 +102,9 @@ module.exports = function(app) {
     });
     sendMetadata();
 
-    let dbFile = filePath.join(app.getDataDirPath(), 'postgsail.sqlite3.db');
-    
-    //db = new sqlite3.Database(dbFile);
-    db = new Database(dbFile);
-    //db.run
-    db.exec('CREATE TABLE IF NOT EXISTS buffer(time REAL,' +
+    let dbFile = filePath.join(app.getDataDirPath(), 'postgsail.sqlite3');
+    db = new sqlite3.Database(dbFile);
+    db.run('CREATE TABLE IF NOT EXISTS buffer(time REAL,' +
            '                                 client_id TEXT,' +
            '                                 latitude REAL,' +
            '                                 longitude REAL,' +
@@ -159,28 +135,22 @@ module.exports = function(app) {
       submitDataToServer();
     }, SUBMIT_INTERVAL * 60 * 1000);
 
-
-    
     statusProcess = setInterval( function() {
-
-      const stmt = db.prepare('SELECT * FROM buffer ORDER BY time');
-      const data = stmt.all();
-      
-      let message;
-        
-      if (data.length == 1) {
+      db.all('SELECT * FROM buffer ORDER BY time', function(err, data) {
+        let message;
+        if (data.length == 1) {
           message = `${data.length} entry in the queue,`;
-      } else {
+        } else {
           message = `${data.length} entries in the queue,`;
-      }
-      if (lastSuccessfulUpdate) {
+        }
+        if (lastSuccessfulUpdate) {
           let since = timeSince(lastSuccessfulUpdate);
           message += ` last connection to the server was ${since} ago.`;
-      } else {
+        } else {
           message += ` no successful connection to the server since restart.`;
-      }
+        }
         app.setPluginStatus(message);
-      
+      })
     }, 31*1000);
   }
 
@@ -209,10 +179,6 @@ module.exports = function(app) {
       source: {
         type: "string",
         title: "GPS source (Optional - only if you have multiple GPS sources and you want to use an explicit source)"
-      },
-      mode: {
-        type: "string",
-        title: "Dev or Prod"
       }
     }
   }
@@ -270,25 +236,10 @@ module.exports = function(app) {
     let values = [new Date().toISOString(), metadata.client_id, position.latitude, position.longitude,
                   speedOverGround, courseOverGroundTrue, windSpeedApparent,
                   angleSpeedApparent, status, JSON.stringify(metrics)];
-                  
-    const stmt = db.prepare('INSERT INTO buffer (time, client_id, latitude, longitude,' +
-                                     'speedoverground, courseovergroundtrue, ' +
-                                     'windspeedapparent, anglespeedapparent, ' +
-                                     'status, metrics) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    let info = stmt.run(values);
 
-    app.debug('Buffer updated');
-
-
-    if (info.changes == 1)
-      windSpeedApparent = 0;
-
-    /*
     db.run('INSERT INTO buffer VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', values, function(err) {
       windSpeedApparent = 0;
     });
-    */
-
     position.changedOn = null;
   }
 
@@ -296,26 +247,19 @@ module.exports = function(app) {
     app.debug('submitDataToServer');
     // Limit the numbers of entries for slow connection, 1 entry/row a minutes submit every 10min
     // and reduce memory usage
-
-    const stmt = db.prepare(`SELECT * FROM buffer ORDER BY time LIMIT ${BUFFER_LIMIT}`);
-    let data = stmt.all();
-
-    //db.all(`SELECT * FROM buffer ORDER BY time LIMIT ${BUFFER_LIMIT}`, function(err, data) {
+    db.all(`SELECT * FROM buffer ORDER BY time LIMIT ${BUFFER_LIMIT}`, function(err, data) {
     //db.all('SELECT * FROM buffer ORDER BY time LIMIT 2', function(err, data) {
     //db.all('SELECT * FROM buffer ORDER BY time', function(err, data) {
-
       if (!data || data.length == 0) {
         app.debug('Nothing to send to the server, skipping');
         return
       }
-
       app.debug(`DEBUG: metrics sending ${data.length} row(s)`);
       //app.debug(JSON.stringify(data));
       let i;
       for (i = 0; i < data.length; i++) {
         data[i].metrics = JSON.parse(data[i].metrics);
       }
-
       app.debug('DEBUG: metrics lastTime:' + data[data.length-1].time);
       //console.log(`signalk-postgsail - metrics sending ${data.length} row(s), lastTime:` + data[data.length-1].time);
       /* *
@@ -323,7 +267,6 @@ module.exports = function(app) {
       * https://www.geeksforgeeks.org/node-js-zlib-gzipsync-method/
       * https://www.stedi.com/docs/edi-core/compression
       * */
-
       API.post('/metrics?select=time', data,
       //API.post('/metrics?select=time', zlib.gzipSync(data),
         {
@@ -337,7 +280,6 @@ module.exports = function(app) {
       )
       .then(function (response) {
         //console.log(response);
-        
         if (response && response.status == 201 && response.data){
           app.debug(response.data);
           let lastTs = null;
@@ -355,33 +297,28 @@ module.exports = function(app) {
           }
           app.debug(`Successfully sent ${data.length} record(s) to the server`);
           app.debug(`Removing from buffer <=${lastTs}`);
-
-          //db.run('DELETE FROM buffer where time <= ?', lastTs, function cb(err) {
-
-          try {
-            const stmt = db.prepare('DELETE FROM buffer where time <= ?');
-            let info = stmt.run(lastTs);
-
-            app.debug(`Buffer row(s) deleted: ${info.changes}`);
-            
-            if (info.changes && info.changes > 0) {
-              app.debug(`Deleted metrics from buffer, req:${data.length}, got:${info.changes}`);
-              // Wait and send new metrics data
-              app.debug('Successfully deleted metrics from buffer, will continue sending metrics to the server');
-              lastSuccessfulUpdate = Date.now();
-              // Avoid conflict between setInterval data process and SetTimeout data process??
-              setTimeout(function(){
-                app.debug('setTimeout, SubmitDataToServer, submitting next metrics batch');
-                submitDataToServer();
-              }, 19*1000); // In 8 seconds
+          db.run('DELETE FROM buffer where time <= ?', lastTs, function cb(err) {
+            if(err) {
+              app.debug(`Failed to delete metrics from buffer`);
             } else {
-              app.debug(`No operations runned on metrics from buffer: ${info.changes}`);
-              console.log('signalk-postgsail - warning removing metrics from buffer');
+              app.debug(`Buffer row(s) deleted: ${this.changes}`);
+              if (this.changes && this.changes > 0) {
+                app.debug(`Deleted metrics from buffer, req:${data.length}, got:${this.changes}`);
+                // Wait and send new metrics data
+                app.debug('Successfully deleted metrics from buffer, will continue sending metrics to the server');
+                lastSuccessfulUpdate = Date.now();
+                // Avoid conflict between setInterval data process and SetTimeout data process??
+                setTimeout(function(){
+                  app.debug('setTimeout, SubmitDataToServer, submitting next metrics batch');
+                  submitDataToServer();
+                }, 19*1000); // In 8 seconds
+              } else {
+                app.debug(`No operations runned on metrics from buffer: ${this.changes}`);
+                console.log('signalk-postgsail - warning removing metrics from buffer');
+              }
             }
-          }
-          catch(err){
-            app.debug(`Failed to delete metrics from buffer`);
-          }
+          });
+
         }
       })
       .catch(function (error) {
@@ -404,11 +341,27 @@ module.exports = function(app) {
         //console.log('signalk-postgsail - Error', error.config);
       });
 
+    });
+  }
+
+  function getKeyValue(key, maxAge) {
+    let data = app.getSelfPath(key);
+    if (!data) {
+      return null;
+    }
+    let now = new Date();
+    let ts = new Date(data.timestamp);
+    let age = (now - ts) / 1000;
+    if (age <= maxAge) {
+      return data.value
+    } else {
+      return null;
+    }
   }
 
   function timeSince(date) {
-    let seconds = Math.floor((new Date() - date) / 1000);
-    let interval = seconds / 31536000;
+    var seconds = Math.floor((new Date() - date) / 1000);
+    var interval = seconds / 31536000;
     if (interval > 1) {
       return Math.floor(interval) + " years";
     }
@@ -443,6 +396,27 @@ module.exports = function(app) {
       return null;
     }
     return Math.round(ms * 1.94384 * 10) / 10;
+  }
+
+  function kelvinToCelsius(deg) {
+    if (deg == null) {
+      return null;
+    }
+    return Math.round((deg - 273.15) * 10) / 10;
+  }
+
+  function floatToPercentage(val) {
+    if (val == null) {
+      return null;
+    }
+    return val * 100;
+  }
+
+  function pascalToHectoPascal(pa) {
+    if (pa == null) {
+      return null;
+    }
+    return Math.round(pa/100*10)/10;
   }
 
   function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -512,10 +486,10 @@ module.exports = function(app) {
 
     switch (path) {
       case 'navigation.position':
-        //app.debug('Save: ' + path);
+        app.debug('Save: ' + path);
         let source = data.updates[0]['$source'];
         if ((gpsSource) && (source != gpsSource)) {
-          //app.debug(`Skipping position from GPS resource ${source}`);
+          app.debug(`Skipping position from GPS resource ${source}`);
           break;
         }
         if (position) {
@@ -608,7 +582,7 @@ module.exports = function(app) {
         app.debug('Save: ' + path);
         let sogsource = data.updates[0]['$source'];
         if ((gpsSource) && (sogsource != gpsSource)) {
-          //app.debug(`Skipping speedOverGround from resource ${sogsource}`);
+          app.debug(`Skipping speedOverGround from resource ${sogsource}`);
           break;
         }
         // Keep the previous 3 values
@@ -617,18 +591,18 @@ module.exports = function(app) {
         previousSpeeds = previousSpeeds.slice(0, 3);
         break;
       case 'navigation.courseOverGroundTrue':
-        //app.debug('Save: ' + path);
+        app.debug('Save: ' + path);
         // Keep the previous 3 values
         courseOverGroundTrue = radiantToDegrees(value);
         previousCOGs.unshift(courseOverGroundTrue);
         previousCOGs = previousCOGs.slice(0, 6);
         break;
       case 'environment.wind.speedApparent':
-        //app.debug('Save: ' + path);
+        app.debug('Save: ' + path);
         windSpeedApparent = Math.max(windSpeedApparent, metersPerSecondToKnots(value));
         break;
       case 'environment.wind.angleApparent':
-        //app.debug('Save: ' + path);
+        app.debug('Save: ' + path);
         angleSpeedApparent = radiantToDegrees(value);
         break;
       /*
@@ -638,12 +612,12 @@ module.exports = function(app) {
       case 'navigation.state':
         // Wait for a valid status before sending data ?
         if (path) {
-          //app.debug(`Save: ${path} with value ${value}`);
+          app.debug(`Save: ${path} with value ${value}`);
           status = value;
         }
         break;
       case 'navigation.altitude':
-        //app.debug(`Add to metrics path: '${path}'`);
+        app.debug(`Add to metrics path: '${path}'`);
         metrics[path] = value;
         break;
       default:
@@ -652,11 +626,10 @@ module.exports = function(app) {
         // environment.sunlight.*
         // navigation.courseGreatCircle.*
         // design.*
-        
         if (path === '') {
-          //app.debug(`Skipping path '${path}' because is invalid, '${value}'`);
+          app.debug(`Skipping path '${path}' because is invalid, '${value}'`);
         } else if ( isNaN(value) || !isfloatField(value) || !isFinite(value) ) {
-          //app.debug(`Skipping path '${path}' because value is invalid, '${value}'`);
+          app.debug(`Skipping path '${path}' because value is invalid, '${value}'`);
         } else {
           //app.debug(`Add to metrics path: '${path}'`);
           metrics[path] = value;
